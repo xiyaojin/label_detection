@@ -3,8 +3,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import *
 from tensorflow.keras.regularizers import l2
-from tensorflow_addons.layers import InstanceNormalization
-from tensorflow_addons.layers import SpectralNormalization
 import numpy as np
 from tensorflow.compat.v1.image import resize_bilinear
 import tensorflow.keras.backend as K
@@ -12,27 +10,32 @@ import tensorflow.keras.backend as K
 def residual_block(nb_filters,weight_decay=0.00005,strides=1,d=1,batch_momentum=0.99):
     n1,n2,n3=nb_filters
     def f(input_tensor):
-        x=SpectralNormalization(Conv3D(n1,1,strides=strides,kernel_regularizer=l2(weight_decay)))(input_tensor)
-        #x=BatchNormalization(momentum=batch_momentum)(x)
-        x=InstanceNormalization()(x)
+        x=Conv3D(n1,1,strides=strides,kernel_regularizer=l2(weight_decay))(input_tensor)
+        x=BatchNormalization(momentum=batch_momentum)(x)
         x=LeakyReLU(alpha=0.1)(x)
         
-        x=SpectralNormalization(Conv3D(n2,3,dilation_rate=d,padding='same',kernel_regularizer=l2(weight_decay)))(x)
-        #x=BatchNormalization(momentum=batch_momentum)(x)
-        x=InstanceNormalization()(x)
+        x=Conv3D(n2,3,dilation_rate=d,padding='same',kernel_regularizer=l2(weight_decay))(x)
+        x=BatchNormalization(momentum=batch_momentum)(x)
         x=LeakyReLU(alpha=0.1)(x)
 
-        x=SpectralNormalization(Conv3D(n3,1,kernel_regularizer=l2(weight_decay)))(x)
-        #x=BatchNormalization(momentum=batch_momentum)(x)
-        x=InstanceNormalization()(x)
+        x=Conv3D(n3,1,kernel_regularizer=l2(weight_decay))(x)
+        x=BatchNormalization(momentum=batch_momentum)(x)
         x=LeakyReLU(alpha=0.1)(x)
         
-        x0=SpectralNormalization(Conv3D(n3,1,strides=strides,kernel_regularizer=l2(weight_decay)))(input_tensor)
-        #x0=BatchNormalization(momentum=batch_momentum)(x0)
-        x0=InstanceNormalization()(x0)
-        
+        x0=Conv3D(n3,1,strides=strides,kernel_regularizer=l2(weight_decay))(input_tensor)
+        x0=BatchNormalization(momentum=batch_momentum)(x0)        
         x=Add()([x,x0])
         x=LeakyReLU(alpha=0.1)(x)
+        return x
+    return f
+
+def conv_block(kernel_size, filters, weight_decay=0., strides=(1, 1, 1), batch_momentum=0.99):
+    def f(input_tensor):
+        bn_axis = 4
+        x = Conv3D(filters, kernel_size, padding='same',kernel_regularizer=l2(weight_decay),strides=strides)(input_tensor)
+        x = BatchNormalization(axis=bn_axis, momentum=batch_momentum)(x)
+        x = Activation('relu')(x)
+
         return x
     return f
 

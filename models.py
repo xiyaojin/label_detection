@@ -1,77 +1,70 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
-from tensorflow.keras.layers import *
-from layers import *
-from tensorflow_addons.layers import SpectralNormalization
+from tensorflow.keras.layers import*
+from layers import residual_block,conv_block,BilinearUpSampling3D
+from tensorflow.keras.initializers import glorot_normal
+ 
 
-
-def generator(filters):
-
-
-    inputs = tf.keras.layers.Input(shape=[100,100,100,1])
+def Res():
     
-
-    x=SpectralNormalization(Conv3D(64,7,strides=2,padding='same',kernel_regularizer=l2(0.00005)))(inputs)
-    x=LeakyReLU(0.1)(x)
-    x=residual_block(filters[0],strides=1,d=1)(x)
-    x=residual_block(filters[0],strides=1,d=1)(x)
-    x1=residual_block(filters[0],strides=1,d=1)(x)
+    inputs = Input(shape=[100,100,100,1])
+    x=Conv3D(32,7,padding='same',kernel_initializer=glorot_normal())(inputs)
+    x=residual_block([8,8,32],strides=1)(x)
+    #x=residual_block([4,4,8],strides=1)(x)
     
-    x=residual_block(filters[1],strides=2)(x1)
-    x=residual_block(filters[1],strides=1,d=1)(x)
-    x2=residual_block(filters[1],strides=1,d=1)(x)
+    x=residual_block([4,4,16],strides=2)(x)
+    #x=residual_block([8,8,16],strides=1)(x)
     
-    x=residual_block(filters[2],strides=2)(x2)
-    x=residual_block(filters[2],strides=1,d=1)(x)
-    x=residual_block(filters[2],strides=1,d=1)(x)
+    x=residual_block([2,2,8],strides=2)(x)
+    #x=residual_block([16,16,32],strides=1)(x)
     
-    x=BilinearUpSampling3D(target_size=(int(100/4), int(100/4), int(100/4), 1))(x)
-    x=concatenate([x2,x])
-    x=residual_block(filters[1],strides=1,d=1)(x)
-    x=residual_block(filters[1],strides=1,d=1)(x)
-    x=residual_block(filters[1],strides=1,d=1)(x)
+    x=UpSampling3D(2)(x)
+    x=residual_block([4,4,16],strides=1)(x)
+    #x=residual_block([8,8,32],strides=1)(x)
     
-    x = BilinearUpSampling3D(target_size=(int(100/2), int(100/2), int(100/2), 1))(x)
-    x=concatenate([x1,x])
-    x=residual_block(filters[0],strides=1,d=1)(x)        
-    x=residual_block(filters[0],strides=1,d=1)(x)   
-    x=residual_block(filters[0],strides=1,d=1)(x)
-    
-    x = BilinearUpSampling3D(target_size=(100,100,100,1))(x)
-    x=residual_block(filters[0],strides=1,d=1)(x)        
-    x=SpectralNormalization(Conv3D(32,1,padding='same'))(x)
-    x=LeakyReLU(0.1)(x)
-    x=SpectralNormalization(Conv3D(1,1,padding='same',activation='tanh'))(x)
-    
-    
-    return tf.keras.Model(inputs=inputs,outputs=x)
-
-
-def discriminator(filters):
-
-    rate=0.05
+    x=UpSampling3D(2)(x)
+    x=residual_block([8,8,32],strides=1)(x)        
+    #x=residual_block([16,16,64],strides=1)(x)   
+    x=Conv3D(32,1,padding='same',activation='relu')(x)
+    x=Conv3D(10,1,padding='same')(x)
        
-    inputs = tf.keras.layers.Input(shape=[100, 100, 100, 1], name='input_image')
+    return tf.keras.Model(inputs=inputs,outputs=x)   
     
-    x=GaussianNoise(input_shape=[100,100,100,1],stddev=0.001)(inputs)
-    x=SpectralNormalization(Conv3D(64,7,strides=2,padding='same',kernel_regularizer=l2(0.00005)))(inputs)
-    x=LeakyReLU(0.1)(x)
+
+def AE():
     
-    x=residual_block(filters[0],strides=1,d=1)(x)
-    x=residual_block(filters[0],strides=1,d=1)(x)
-    x1=residual_block(filters[0],strides=1,d=1)(x)
+    img_shape=(100,100,100,1)
+    batch_momentum=0.9
+    bn_axis=4
+    weight_decay=0.00005
     
-    x=residual_block(filters[1],strides=2)(x1)
-    x=residual_block(filters[1],strides=1,d=1)(x)
-    x2=residual_block(filters[1],strides=1,d=1)(x)
+    input_image=Input(shape=img_shape,name='in_image')
+    x1=Conv3D(32,7,padding='same',kernel_initializer=glorot_normal())(input_image)
+    x1=BatchNormalization(axis=bn_axis,momentum=batch_momentum)(x1)
+    x1=Activation('relu')(x1)
     
-    x=residual_block(filters[2],strides=2)(x2)
-    x=residual_block(filters[2],strides=1,d=1)(x)
-    x=residual_block(filters[2],strides=1,d=1)(x)    
- 
+    x1=conv_block(3, 8, strides=2, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 8, strides=1, weight_decay=weight_decay, batch_momentum=0.95)(x1)
     
-    x=SpectralNormalization(Conv3D(32,1,padding='same'))(x)
-    x=SpectralNormalization(Conv3D(1,1,padding='same',activation='sigmoid'))(x)
- 
+    x1=conv_block(3, 16, strides=2, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 16, strides=1, weight_decay=weight_decay, batch_momentum=0.95)(x1)
     
-    return tf.keras.Model(inputs=inputs, outputs=x)
+    x1=conv_block(3, 32, strides=2, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 32, strides=1, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+
+    x1=BilinearUpSampling3D(target_size=(25, 25, 25, 1))(x1)
+    x1=conv_block(3, 16, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 16, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    
+    x1=BilinearUpSampling3D(target_size=(50, 50, 50, 1))(x1)
+    x1=conv_block(3, 8, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 8, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    
+    x1=BilinearUpSampling3D(target_size=(100, 100, 100, 1))(x1)
+    x1=conv_block(3, 4, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=conv_block(3, 4, weight_decay=weight_decay, batch_momentum=0.95)(x1)
+    x1=Conv3D(10,1,padding='same',kernel_initializer=glorot_normal())(x1)
+    x1=Activation('linear')(x1)
+    
+    return tf.keras.Model(inputs=input_image,outputs=x1)
+
